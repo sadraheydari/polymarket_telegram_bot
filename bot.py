@@ -6,7 +6,6 @@ from datetime import datetime
 from report_generator import generate_report
 
 # --- LOGGING SETUP ---
-# This configures the bot to write logs to both 'bot_activity.log' and the console.
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
@@ -53,7 +52,8 @@ EVENTS_MAP = load_events()
 bot = telebot.TeleBot(BOT_TOKEN)
 logger.info("--- Polymarket Bot Initialized ---")
 
-@bot.message_handler(commands=['start', 'help'])
+# --- WELCOME HANDLER (/start) ---
+@bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
@@ -61,15 +61,48 @@ def send_welcome(message):
     
     logger.info(f"User {username} ({user_id}) started the bot in chat {chat_id}")
     
-    commands_list = "\n".join([f"/{cmd}" for cmd in EVENTS_MAP.keys()])
     welcome_text = (
-        "Welcome! I track Polymarket odds.\n\n"
-        "**Available Commands:**\n"
-        f"{commands_list}"
+        "👋 **Welcome to PolyBot!** 🔮\n\n"
+        "I am your personal analyst for **Polymarket** prediction markets. "
+        "I track real-time odds for major geopolitical and economic events.\n\n"
+        "📉 **What I do:**\n"
+        "• Fetch live probability charts (Last 24h)\n"
+        "• Compare odds: Today vs Next Week vs Month End\n"
+        "• Generate instant analysis tables\n\n"
+        "🚀 **Get Started:**\n"
+        "Type /help to see the list of tracked markets and generate your first report!"
     )
+    # Using Markdown for bolding
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-# Dynamic Handler: Catches any command that exists in our events.json
+# --- HELP HANDLER (/help) ---
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    logger.info(f"User {message.from_user.username} requested help.")
+    
+    if not EVENTS_MAP:
+        bot.reply_to(message, "⚠️ No events configured. Check `events.json`.")
+        return
+
+    # Build the list of commands dynamically
+    events_list_text = ""
+    for command, url in EVENTS_MAP.items():
+        # Escape underscores for Markdown so the command doesn't turn italic
+        clean_cmd = command.replace("_", "\\_")
+        events_list_text += f"🔹 /{clean_cmd}\n   🔗 [View Market Source]({url})\n\n"
+
+    help_text = (
+        "📊 **Available Markets**\n"
+        "Select a command below to generate a real-time odds report:\n\n"
+        f"{events_list_text}"
+        "───────────────────\n"
+        "💡 *To add a new tracker, commit a request to update `events.json` in [Github](https://github.com/sadraheydari/polymarket_telegram_bot).*"
+    )
+    
+    # disable_web_page_preview=True keeps the chat clean from URL previews
+    bot.reply_to(message, help_text, parse_mode="Markdown", disable_web_page_preview=True)
+
+# --- DYNAMIC COMMAND HANDLER ---
 @bot.message_handler(func=lambda message: message.text.startswith('/') and message.text.split()[0][1:] in EVENTS_MAP)
 def handle_dynamic_command(message):
     # Extract command (remove '/' and take first word)
@@ -82,7 +115,7 @@ def handle_dynamic_command(message):
     chat_id = message.chat.id
     logger.info(f"COMMAND: /{command} | USER: {username} ({user_id}) | URL: {event_url}")
     
-    bot.send_message(chat_id, "Fetching latest odds from Polymarket... ⏳")
+    bot.send_message(chat_id, "🔍 **Fetching latest odds from Polymarket...**\nPlease wait while I generate the chart.", parse_mode="Markdown")
     
     try:
         # Generate Report
@@ -107,11 +140,11 @@ def handle_dynamic_command(message):
         logger.exception(f"CRITICAL ERROR handling /{command}: {e}")
         bot.send_message(chat_id, error_msg)
 
-# Catch-all for unknown commands
+# --- CATCH-ALL HANDLER ---
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
-    logger.info(f"Unknown message from {message.from_user.username}: {message.text}")
-    # Optional: bot.reply_to(message, "I don't recognize that command.")
+    # Just log unknown messages, don't reply to avoid spamming groups
+    logger.info(f"Ignored message from {message.from_user.username}: {message.text}")
 
 if __name__ == "__main__":
     try:
