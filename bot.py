@@ -1,4 +1,5 @@
 import json
+import os
 import telebot
 import logging
 import sys
@@ -16,21 +17,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- LOAD CONFIGURATION ---
-def load_config():
-    try:
-        with open('config.json', 'r') as f:
-            config = json.load(f)
-            token = config.get('bot_token')
-            if not token or token == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-                raise ValueError("Invalid Bot Token in config.json")
-            return token
-    except FileNotFoundError:
-        logger.critical("config.json not found. Exiting.")
-        sys.exit(1)
-    except Exception as e:
-        logger.critical(f"Error loading config: {e}")
-        sys.exit(1)
 
 def load_events():
     try:
@@ -45,7 +31,7 @@ def load_events():
         logger.error(f"Error loading events.json: {e}")
         return {}
 
-BOT_TOKEN = load_config()
+BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
 EVENTS_MAP = load_events()
 
 # Initialize Bot
