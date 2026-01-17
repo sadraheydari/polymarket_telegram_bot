@@ -82,7 +82,7 @@ def send_help(message):
         "Select a command below to generate a real-time odds report:\n\n"
         f"{events_list_text}"
         "───────────────────\n"
-        "💡 *To add a new tracker, commit a request to update `events.json` in [Github](https://github.com/sadraheydari/polymarket_telegram_bot).*"
+        "💡 To add a new tracker, commit a request to update `events.json` in [Github](https://github.com/sadraheydari/polymarket_telegram_bot)."
     )
     
     # disable_web_page_preview=True keeps the chat clean from URL previews
