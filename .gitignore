@@ -1,5 +1,5 @@
 # Authentication tokens and keys
-tokens/
+config.json
 
 # Log files
 *.log
