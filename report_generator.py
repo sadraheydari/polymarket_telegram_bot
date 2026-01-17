@@ -4,33 +4,29 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 import io
-import calendar
-from datetime import datetime, timedelta
+from datetime import datetime
 import polymarket_api as api
 
 def parse_market_date(date_str):
-    """Attempts to parse a date string like 'January 31' to a datetime object."""
+    """Attempts to parse a date string like 'January 31' to a datetime; returns None on failure."""
     try:
         current_year = datetime.now().year
         full_date_str = f"{date_str} {current_year}"
-        dt = datetime.strptime(full_date_str, "%B %d %Y")
-        return dt
+        return datetime.strptime(full_date_str, "%B %d %Y")
     except ValueError:
         return None
 
-def get_closest_market(market_list, target_date):
-    """Finds the market in the list closest to the target_date."""
-    if not market_list:
-        return None
-    # market_list items are tuples: (market_data, parsed_date)
-    closest = min(market_list, key=lambda x: abs((x[1] - target_date).total_seconds()))
-    return closest
+def is_market_closed(market):
+    """Heuristic to determine if a market is closed/resolved."""
+    status = str(market.get('status', '')).lower()
+    closed_flag = market.get('closed') or market.get('isResolved')
+    return closed_flag or status in {"closed", "resolved", "finalized"}
 
 def generate_report(event_url):
     """
     Main orchestrator.
     1. Fetches markets from URL.
-    2. Filters for Today, Next Week, Month End.
+    2. Plots all markets found for the event.
     3. Generates Plot & Table.
     
     Returns: (image_buffer, text_response)
@@ -39,39 +35,43 @@ def generate_report(event_url):
     if not markets:
         return None, "Could not fetch event markets. Check the URL."
 
-    # 1. Parse dates
+    # 1. Collect open markets with a display title and optional parsed date
+    today = datetime.now().date()
     valid_markets = []
     for m in markets:
+        if is_market_closed(m):
+            continue
         title = m.get('groupItemTitle', m.get('question', 'Unknown'))
-        dt = parse_market_date(title)
-        if dt:
-            valid_markets.append((m, dt))
+        parsed_dt = parse_market_date(title)
+        if parsed_dt and parsed_dt.date() <= today:
+            # skip dates that are today or in the past
+            continue
+        valid_markets.append((m, title, parsed_dt))
     
     if not valid_markets:
-        return None, "Could not parse dates for any markets in this event."
+        return None, "No open future markets found for this event."
 
-    # 2. Determine Targets
-    now = datetime.now()
-    target_today = now
-    target_week = now + timedelta(days=7)
-    last_day = calendar.monthrange(now.year, now.month)[1]
-    target_month_end = now.replace(day=last_day)
+    # 2. Order markets: dated (soonest first) then undated, limit to 5
+    dated = [item for item in valid_markets if item[2]]
+    undated = [item for item in valid_markets if not item[2]]
+    dated = sorted(dated, key=lambda x: x[2])
+    ordered_markets = (dated + undated)[:5]
 
-    # 3. Select Markets
-    selected_markets = [
-        ("Closest to Today", get_closest_market(valid_markets, target_today)),
-        ("Next Week", get_closest_market(valid_markets, target_week)),
-        ("Month End", get_closest_market(valid_markets, target_month_end))
-    ]
-
-    # 4. Setup Plot
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), constrained_layout=True)
-    fig.suptitle(f"Polymarket Odds History (Last 24h)", fontsize=16, fontweight='bold')
+    # 3. Setup Plot for selected markets
+    n = len(ordered_markets)
+    fig_height = max(3, n) * 2.5  # scale height with market count
+    fig, axs = plt.subplots(n, 1, figsize=(10, fig_height))
+    if n == 1:
+        axs = [axs]
+    fig.suptitle("Polymarket Odds History (Last 24h)", fontsize=16, fontweight='bold')
+    fig.subplots_adjust(hspace=0.8, top=0.92)
 
     table_rows = []
 
-    for ax, (label, (market, dt)) in zip(axs, selected_markets):
-        group_date = market.get('groupItemTitle', market.get('question', 'Unknown'))
+    for ax, (market, title, parsed_dt) in zip(axs, ordered_markets):
+        group_date = title
+        if parsed_dt:
+            group_date = f"{title} ({parsed_dt.strftime('%Y-%m-%d')})"
         
         # Resolve Token ID
         yes_token_id = api.get_yes_token_id(market)
@@ -102,10 +102,10 @@ def generate_report(event_url):
                 
                 ax.axhline(y=current_val, color='red', linestyle=':', alpha=0.8)
                 x_pos = df['t'].iloc[-1]
-                ax.text(x_pos, current_val + 0.5, current_val_str, 
+                ax.text(x_pos + pd.Timedelta(minutes=10), current_val, current_val_str, 
                         color='red', fontweight='bold', ha='left', va='bottom')
 
-                ax.set_title(f"{label}: {group_date}", loc='left', fontsize=12)
+                ax.set_title(f"{group_date}", loc='left', fontsize=12)
                 ax.set_ylabel("Prob (%)")
                 ax.grid(True, linestyle='--', alpha=0.5)
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
@@ -115,16 +115,16 @@ def generate_report(event_url):
             ax.text(0.5, 0.5, "Data Unavailable", ha='center', va='center')
 
         # Add to table
-        table_rows.append(f"{label:<16} | {group_date:<12} | {current_val_str}")
+        table_rows.append(f"{group_date:<24} | {current_val_str}")
 
-    # Save to buffer
+    # Save
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=100)
     buf.seek(0)
     plt.close()
 
     # Build Table String
-    table_header = f"{'Target':<16} | {'Date':<12} | {'Prob':<6}"
+    table_header = f"{'Market':<24} | {'Prob':<6}"
     table_divider = "-" * len(table_header)
     table_text = f"```\n{table_header}\n{table_divider}\n"
     table_text += "\n".join(table_rows)
