@@ -1,3 +1,11 @@
+# Authentication tokens and keys
+tokens/
+
+# Log files
+*.log
+
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
