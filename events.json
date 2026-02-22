@@ -1,5 +1,7 @@
 {
     "iran_us_war_prob": "https://polymarket.com/event/us-strikes-iran-by",
-    "fed_chair": "https://polymarket.com/event/who-will-trump-nominate-as-fed-chair",
-    "portugal_presidential_election": "https://polymarket.com/event/portugal-presidential-election"
+    "ir_close_hormuz": "https://polymarket.com/event/will-iran-close-the-strait-of-hormuz-by-2027",
+    "next_us_strike": "https://polymarket.com/event/next-country-us-strikes-918",
+    "khamenei_leave": "https://polymarket.com/event/will-khamenei-leave-iran-by-friday",
+    "pahlavi_enter": "https://polymarket.com/event/will-reza-pahlavi-enter-iran-by-june-30"
 }
