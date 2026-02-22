@@ -23,6 +23,8 @@ def load_events():
         with open('events.json', 'r') as f:
             events = json.load(f)
             logger.info(f"Events loaded successfully: {list(events.keys())}")
+            for cmd, url in events.copy().items():
+                events[cmd + '_weekly'] = url  # Add weekly variants
             return events
     except FileNotFoundError:
         logger.warning("events.json not found. No dynamic commands loaded.")
@@ -31,7 +33,11 @@ def load_events():
         logger.error(f"Error loading events.json: {e}")
         return {}
 
-BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
+# BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
+BOT_TOKEN = ""
+with open('config.json', 'r') as f:
+    config = json.load(f)
+    BOT_TOKEN = config.get('bot_token', '')
 EVENTS_MAP = load_events()
 
 # Initialize Bot
@@ -75,7 +81,9 @@ def send_help(message):
     for command, url in EVENTS_MAP.items():
         # Escape underscores for Markdown so the command doesn't turn italic
         clean_cmd = command.replace("_", "\\_")
-        events_list_text += f"🔹 /{clean_cmd}\n   🔗 [View Market Source]({url})\n\n"
+        events_list_text += f"🔹 /{clean_cmd}"
+        events_list_text += "   (Weekly)" if command.endswith('_weekly') else ""
+        events_list_text += f"\n   🔗 [View Market Source]({url})\n\n"
 
     help_text = (
         "📊 **Available Markets**\n"
@@ -89,10 +97,10 @@ def send_help(message):
     bot.reply_to(message, help_text, parse_mode="Markdown", disable_web_page_preview=True)
 
 # --- DYNAMIC COMMAND HANDLER ---
-@bot.message_handler(func=lambda message: message.text.startswith('/') and message.text.split()[0][1:] in EVENTS_MAP)
+@bot.message_handler(func=lambda message: message.text.startswith('/') and message.text.split()[0].split('@')[0][1:] in EVENTS_MAP)
 def handle_dynamic_command(message):
     # Extract command (remove '/' and take first word)
-    command = message.text.split()[0][1:]
+    command = message.text.split()[0].split('@')[0][1:]
     event_url = EVENTS_MAP.get(command)
     
     # Log the Request
@@ -105,7 +113,8 @@ def handle_dynamic_command(message):
     
     try:
         # Generate Report
-        photo, table_text = generate_report(event_url)
+        weekly = command.endswith('_weekly')
+        photo, table_text = generate_report(event_url, weekly=weekly)
         
         if photo:
             logger.info(f"Report generated successfully for {username}. Sending...")

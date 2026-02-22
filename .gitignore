@@ -5,6 +5,9 @@ config.json
 *.log
 
 .DS_Store
+.vscode/
+
+test.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

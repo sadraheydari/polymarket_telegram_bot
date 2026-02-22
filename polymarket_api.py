@@ -36,18 +36,26 @@ def get_event_markets(url):
         response = requests.get(f"{GAMMA_API_URL}/{slug}", headers=get_headers())
         response.raise_for_status()
         data = response.json()
+        # print(f"DEBUG: Event Data Keys: {list(data.keys())}")
+        # res = data.get('markets', [])
+        # for m in res:
+        #     print(f"DEBUG: Market Summary:\n\t{m}")
         return data.get('markets', [])
     except Exception as e:
         print(f"Error fetching event: {e}")
         return []
 
-def fetch_full_market_details(market_slug):
+def fetch_full_market_details(market_slug, debug=False):
     """Fetches detailed market data if the event summary is incomplete."""
     try:
         url = f"{MARKET_API_URL}/{market_slug}"
         response = requests.get(url, headers=get_headers())
         if response.status_code == 200:
-            return response.json()
+            response_data = response.json()
+            if debug:
+                print(f"DEBUG: Fetched full market details for slug '{market_slug}'")
+                print(f"DEBUG: Market Data:\n\t{response_data}")
+            return response_data
     except Exception:
         pass
     return None
@@ -83,15 +91,14 @@ def get_yes_token_id(market):
             pass
     return None
 
-def get_price_history(token_id):
-    """Fetches history for the last 24h."""
+def get_price_history(token_id, debug=False, weekly=False):
+    """Fetches history for the last 1 day."""
     end_time = int(time.time())
-    start_time = int((datetime.now(timezone.utc) - timedelta(hours=24)).timestamp())
+    start_time = int((datetime.now(timezone.utc) - timedelta(days=7 if weekly else 1)).timestamp())
     
     # Try multiple intervals to ensure we get data
     strategies = [
-        {"params": {"market": token_id, "startTs": start_time, "endTs": end_time, "interval": "1d"}},
-        {"params": {"market": token_id, "startTs": start_time, "endTs": end_time, "interval": "6h"}},
+        {"params": {"market": token_id, "startTs": start_time, "endTs": end_time, "interval": "1w" if weekly else "1d"}},
         {"params": {"market": token_id, "interval": "max"}}
     ]
 
@@ -99,9 +106,17 @@ def get_price_history(token_id):
         try:
             response = requests.get(CLOB_HISTORY_API_URL, params=strat['params'], headers=get_headers())
             if response.status_code == 200:
-                history = response.json().get('history', [])
+                response_data = response.json()
+                if debug:
+                    print(f"DEBUG: Fetched price history for token ID '{token_id}' with interval '{strat['params'].get('interval', 'N/A')}'")
+                    # print avialble data keys and length
+                    print(f"DEBUG: History Data Keys: {list(response_data.keys())}")
+                    # print(f"DEBUG: History Data:\n\t{response_data}")
+                history = response_data.get('history', [])
                 if history:
                     return history
         except Exception:
+            if debug:
+                print(f"DEBUG: Failed to fetch history for token ID '{token_id}' with interval '{strat['params'].get('interval', 'N/A')}'")
             continue
     return []
