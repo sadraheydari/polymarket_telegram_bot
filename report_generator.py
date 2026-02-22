@@ -3,7 +3,9 @@ matplotlib.use('Agg') # Non-interactive backend
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
+import numpy as np
 import io
+import re
 from datetime import datetime
 import polymarket_api as api
 
@@ -162,3 +164,153 @@ def generate_report(event_url, weekly=False):
     table_text += "\n```"
 
     return buf, table_text
+
+
+
+# ==================================================================
+
+def extract_cdf_from_text(table_text):
+    try:
+        lines = table_text.splitlines()
+        dates = []
+        probs = []
+
+        date_pattern = r"\((\d{4}-\d{2}-\d{2})\)"
+        prob_pattern = r"(\d+\.?\d*)%"
+
+        for line in lines:
+            if "|" not in line:
+                continue
+            if "Market" in line or "---" in line:
+                continue
+
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) < 2:
+                continue
+
+            date_match = re.search(date_pattern, parts[0])
+            prob_match = re.search(prob_pattern, parts[1])
+
+            if date_match and prob_match:
+                dates.append(date_match.group(1))
+                probs.append(float(prob_match.group(1)) / 100.0)
+
+        if len(dates) < 2:
+            return None
+
+        dates_dt = [datetime.strptime(d, "%Y-%m-%d") for d in dates]
+        timestamps = np.array([d.timestamp() for d in dates_dt], dtype=float)
+        probs = np.array(probs, dtype=float)
+
+        if np.any(np.diff(timestamps) <= 0):
+            return None
+        if np.any(np.diff(probs) < -1e-12):
+            return None
+        if np.any((probs < 0) | (probs > 1)):
+            return None
+
+        return timestamps, probs
+
+    except Exception:
+        return None
+
+
+def expected_value_normalized(timestamps, probs):
+    try:
+        if probs[-1] <= 0:
+            return None
+
+        probs_norm = probs / probs[-1]
+
+        p = np.diff(np.concatenate([[0.0], probs_norm]))
+        Et = p[0] * timestamps[0]
+        mid = 0.5 * (timestamps[:-1] + timestamps[1:])
+        Et += float(np.sum(p[1:] * mid))
+
+        return datetime.fromtimestamp(Et)
+
+    except Exception:
+        return None
+
+
+def add_first_last_extrapolation(timestamps, probs):
+    try:
+        if probs[-1] >= 1.0:
+            return timestamps, probs
+
+        t1, t2 = timestamps[0], timestamps[-1]
+        F1, F2 = probs[0], probs[-1]
+
+        slope = (F2 - F1) / (t2 - t1)
+        if slope <= 0:
+            return None
+
+        t_star = t2 + (1.0 - F2) / slope
+
+        timestamps_ext = np.append(timestamps, t_star)
+        probs_ext = np.append(probs, 1.0)
+
+        return timestamps_ext, probs_ext
+
+    except Exception:
+        return None
+
+
+def analyze_and_plot_cdf(table_text):
+    extracted = extract_cdf_from_text(table_text)
+    if extracted is None:
+        return False, None
+
+    timestamps, probs = extracted
+
+    expected_norm = expected_value_normalized(timestamps, probs)
+    if expected_norm is None:
+        return False, None
+
+    extrapolated = add_first_last_extrapolation(timestamps, probs)
+    if extrapolated is None:
+        return False, None
+
+    timestamps_ext, probs_ext = extrapolated
+    expected_fl = expected_value_normalized(timestamps_ext, probs_ext)
+
+    # ---- Plot ----
+    plt.figure()
+
+    # Original data
+    plt.plot([datetime.fromtimestamp(t) for t in timestamps],
+             probs, marker="o")
+
+    # Extrapolation segment (gray dashed)
+    if len(timestamps_ext) > len(timestamps):
+        plt.plot([datetime.fromtimestamp(timestamps[-1]),
+                  datetime.fromtimestamp(timestamps_ext[-1])],
+                 [probs[-1], 1.0],
+                 linestyle="--", color="gray")
+
+        plt.plot(datetime.fromtimestamp(timestamps_ext[-1]),
+                 1.0, marker="o", linestyle="None", color="gray")
+
+    # Expected lines
+    plt.axvline(expected_norm,
+                linestyle="--",
+                color="red",
+                label=f"{expected_norm.strftime('%Y-%m-%d')} (Expected Normalized)")
+
+    plt.axvline(expected_fl,
+                linestyle="--",
+                color="green",
+                label=f"{expected_fl.strftime('%Y-%m-%d')} (Expected Extrapolated)")
+
+    plt.xlabel("Date")
+    plt.ylabel("Probability")
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    plt.close()
+
+    return True, buf

@@ -4,7 +4,7 @@ import telebot
 import logging
 import sys
 from datetime import datetime
-from report_generator import generate_report
+from report_generator import generate_report, analyze_and_plot_cdf
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -123,6 +123,11 @@ def handle_dynamic_command(message):
             bot.send_photo(chat_id, photo)
             # Send the text table
             bot.send_message(chat_id, table_text, parse_mode='Markdown')
+
+            is_cdf, pic = analyze_and_plot_cdf(table_text)
+            if is_cdf:
+                bot.send_photo(chat_id, pic)
+                logger.info(f"CDF analysis sent successfully to chat {chat_id}")
             
             logger.info(f"Sent successfully to chat {chat_id}")
         else:
